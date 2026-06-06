@@ -111,29 +111,27 @@ and `check` refuse to run/pass unless the prior key exists.
 **Mechanism:** the container auto-starts inside **tmux**; the player works in the main pane
 and a persistent **status line** is always rendered.
 
-Status line format (left → right):
+Status line format:
 
 ```
-[ESCAPE-LINUX]  Puzzle 3/7: File Descriptors  ███░░░░ 43%  ⏱ 41:12  hints:1
+⏱ 41:12
 ```
 
-- **Puzzle X/7 + name** — current position.
-- **Progress bar + %** — how much further (fragments collected / 7).
-- **Timer** — `⏱ MM:SS` remaining, or `⏱ off` if disabled, or `⏱ --:--` overtime.
-- **hints:N** — hints consumed (optional, see §6).
+- **Timer only** — `⏱ MM:SS` remaining, or `⏱ off` if disabled, or `⏱ +MM:SS` overtime.
+- No puzzle name, progress bar, or hint count is shown. The player should not know how
+  close they are to finishing.
 
 The status bar refreshes every second (tmux `status-interval 1`) by calling a render script
-that reads the state file. A **fallback** is provided for non-tmux use: a `game status`
-command prints the same line, and an optional `PS1` injection appends a compact
-`[3/7 ⏱41:12]` to the prompt.
+that reads the state file. `game status` prints the timer for non-tmux use. The PS1 shows
+`name@escape:~$` — plain directory only, no game state.
 
 -----
 
 ## 5. Timer
 
 - **Default: ON.** Onboarding asks: *"Enable countdown timer? [Y/n]"*. Can also be set
-  non-interactively via `GAME_TIMER=off` env var or `--no-timer` flag.
-- Default duration: **45:00** (configurable via `GAME_DURATION`).
+  non-interactively via `GAME_TIMER=off` env var.
+- Duration: **60:00** — fixed, not configurable by the player.
 - **On reaching zero (soft-fail, default):** the run is flagged `escaped_late=true`, the
   status timer shows overtime `⏱ +MM:SS`, but the player **may keep going** and still escape.
   A `GAME_HARD_TIMER=true` option converts this to a lockout (final puzzle refuses to
@@ -149,23 +147,22 @@ shared state file so the status bar and engine agree.
 
 A single `game` CLI (on PATH) is the player's control surface. Core subcommands:
 
-- `game status` — print the status line (also used by tmux).
-- `game check` — validate the **current** puzzle; on pass, write the key fragment, advance
-  `current_puzzle`, and print the new clue.
-- `game hint` — print the next hint for the current puzzle (increments `hints`; optionally
-  subtracts time if `GAME_HINT_PENALTY` set).
+- `game status` — print the timer (also used by tmux).
+- `game hint` — print the next hint for the current puzzle (increments `hints`).
 - `game reset [N]` — re-run setup for the current puzzle (or puzzle N), for when the player
   corrupts an artifact.
 - `game pause` / `game resume` — timer control.
 - `game intro` — (re)run onboarding.
 
+There is no `game check`. Puzzles complete automatically.
+
 **Progression contract (how puzzles link):**
 
-1. Each puzzle dir ships `setup.sh` (places artifacts, may require `keyN-1`) and a validator
-   `check.sh`/`check.py` (returns exit 0 + prints fragment on success).
-1. `game check` dispatches to the current puzzle's validator. On exit 0 it writes
-   `~/.game/keys/keyN`, runs the **next** puzzle's `setup.sh`, advances state, and reveals
-   the clue.
+1. Each puzzle dir ships `setup.sh` (places artifacts, asserts prior key exists) and a
+   `watch` condition declared in the puzzle registry (`file` path + optional `contains` string).
+1. `engined` — a background daemon started at onboarding — polls the current puzzle's watch
+   condition every second. On match it writes `~/.game/keys/keyN`, runs the next puzzle's
+   `setup.sh`, advances state, and notifies the player via their terminal.
 1. A puzzle's `setup.sh` **must** assert the prior key exists; this enforces "you can't be
    here without the previous answer," even across container restarts.
 
@@ -173,10 +170,11 @@ A single `game` CLI (on PATH) is the player's control surface. Core subcommands:
 
 ```json
 {
+  "player_name": "Alice",
   "current_puzzle": 3,
   "total_puzzles": 7,
   "fragments": {"1": "...", "2": "...", "3": "..."},
-  "timer": {"enabled": true, "start_epoch": 0, "duration_sec": 2700,
+  "timer": {"enabled": true, "start_epoch": 0, "duration_sec": 3600,
             "paused_sec": 0, "paused_at": null},
   "hints": 1,
   "escaped_late": false,
@@ -201,9 +199,9 @@ Build in this order. Each chunk is independently testable.
 ### Chunk B — Engine core (3 files)
 
 - `engine/state.py` — load/save `state.json`, advance puzzle, write fragments (atomic writes).
-- `engine/puzzles.py` — registry: ordered list of puzzle metadata (id, name, dir, hints).
-- `engine/cli.py` — the `game` command (`status`, `check`, `hint`, `reset`, `pause/resume`,
-  `intro`); dispatches to puzzle validators.
+- `engine/puzzles.py` — registry: ordered list of puzzle metadata (id, name, dir, fragment, watch condition, hints).
+- `engine/cli.py` — the `game` command (`status`, `hint`, `reset`, `pause/resume`, `intro`).
+- `engine/engined.py` — background watcher daemon; polls watch conditions, auto-advances on match.
 
 ### Chunk C — Status bar + timer (3 files)
 
@@ -215,15 +213,16 @@ Build in this order. Each chunk is independently testable.
 
 ### Chunk D — Onboarding (1–2 files)
 
-- `intro.sh` — welcome screen, ask timer on/off + duration, write initial state, show
-  puzzle 1 briefing. (Wireable from `entrypoint.sh`; keep self-contained for `game intro`.)
+- `intro.sh` — welcome screen, ask player name + timer on/off (duration fixed at 60 min),
+  write initial state, record player tty, start `engined`, show puzzle 1 briefing.
 
 ### Chunks E–K — One chunk per puzzle (≤ 3 files each)
 
 Each lives in `puzzles/NN-name/` with the same shape:
 
 - `setup.sh` — assert prior key, place artifacts/secrets (as root where needed).
-- `check.sh` or `check.py` — validator; prints fragment + exits 0 on success.
+- A **watch condition** declared in `engine/puzzles.py` (`file` path + optional `contains`
+  string) — no `check.sh`/`check.py`; `engined` polls and auto-advances.
 - one **artifact source** file specific to the puzzle:
   - **E / P1:** `unlock1.c` (setuid C binary, compiled at build).
   - **F / P2:** `heartbeatd.py` (signal-handling daemon).
@@ -246,8 +245,10 @@ Each lives in `puzzles/NN-name/` with the same shape:
 - **Python for any programming**, except where the *lesson is C/C++* (Puzzle 1's setuid
   binary) — that's intentional, since Linux itself is C.
 - **Every puzzle requires the previous one's output** (key file present and/or fragment used).
-- **State is always on screen** (tmux status bar; `game status` fallback).
-- **Timer on by default, disable-able at onboarding**, with non-interactive override.
+- **Timer is always on screen** (tmux status bar; `game status` fallback). No progress or
+  puzzle position is shown — the player should not know how close they are to finishing.
+- **Timer on by default, disable-able at onboarding** (`GAME_TIMER=off` for non-interactive).
+  Duration is fixed at 60 minutes and not player-configurable.
 - No puzzle is solvable by a naive `cat`/`find`-and-read; each forces the intended technique
   (enforced by root ownership + permissions + the gate checks).
 - Each implementation chunk touches **at most 3 files**.
