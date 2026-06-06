@@ -22,12 +22,14 @@ def save(state: dict) -> None:
     os.rename(tmp, STATE_PATH)
 
 
-def init(timer_enabled: bool = True, duration_sec: int = 2700) -> dict:
+def init(player_name: str = "player", timer_enabled: bool = True,
+         duration_sec: int = 3600) -> dict:
     STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
     KEYS_DIR.mkdir(parents=True, exist_ok=True)
     state = {
+        "player_name": player_name,
         "current_puzzle": 1,
-        "total_puzzles": 7,
+        "total_puzzles": 3,
         "fragments": {},
         "timer": {
             "enabled": timer_enabled,
@@ -83,18 +85,23 @@ def key_exists(n: int) -> bool:
     return key_path(n).exists()
 
 
-# Allow running as a mini CLI for shell scripts:
-#   python3 state.py init [--no-timer] [--duration N]
-#   python3 state.py get current_puzzle
+def get_player_name(state: dict) -> str:
+    return state.get("player_name", "player")
+
+
 if __name__ == "__main__":
     cmd = sys.argv[1] if len(sys.argv) > 1 else ""
     if cmd == "init":
         enabled = "--no-timer" not in sys.argv
-        dur = 2700
+        dur = 3600
         if "--duration" in sys.argv:
             idx = sys.argv.index("--duration")
             dur = int(sys.argv[idx + 1])
-        s = init(enabled, dur)
+        name = "player"
+        if "--name" in sys.argv:
+            idx = sys.argv.index("--name")
+            name = sys.argv[idx + 1]
+        s = init(name, enabled, dur)
         print(json.dumps(s, indent=2))
     elif cmd == "get":
         field = sys.argv[2]

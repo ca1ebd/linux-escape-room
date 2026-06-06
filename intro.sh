@@ -29,20 +29,33 @@ cat <<'BANNER'
 
 BANNER
 
-echo "  7 puzzles. One escape. Good luck."
+echo "  3 puzzles. One escape. Good luck."
 echo ""
-echo "  Target: a developer who uses Linux daily but hasn't gone deep."
-echo "  Commands: game check | game hint | game status | game reset"
+echo "  Commands: game hint | game status | game reset | game pause"
+echo "  Puzzles complete automatically when you do the right thing."
 echo ""
 echo "──────────────────────────────────────────────────────────────"
+echo ""
+
+# ── Player name ────────────────────────────────────────────────────────────────
+
+PLAYER_NAME="player"
+if ! $NO_RESET && [ -t 0 ]; then
+    read -r -p "  Your name: " input_name
+    if [ -n "$input_name" ]; then
+        PLAYER_NAME="$input_name"
+    fi
+elif $NO_RESET; then
+    PLAYER_NAME=$(python3 /game/engine/state.py get player_name 2>/dev/null || echo "player")
+fi
+
 echo ""
 
 # ── Timer configuration ────────────────────────────────────────────────────────
 
 TIMER_ENABLED=true
-DURATION_SEC=2700
+DURATION_SEC=3600  # 60 minutes default
 
-# Non-interactive overrides
 if [ "${GAME_TIMER:-}" = "off" ]; then
     TIMER_ENABLED=false
 fi
@@ -50,7 +63,6 @@ if [ -n "${GAME_DURATION:-}" ]; then
     DURATION_SEC="$GAME_DURATION"
 fi
 
-# Interactive prompt (only when stdin is a terminal and no env override)
 if $TIMER_ENABLED && [ -z "${GAME_TIMER:-}" ] && [ -t 0 ]; then
     read -r -p "  Enable countdown timer? [Y/n] " answer
     case "$answer" in
@@ -59,8 +71,8 @@ if $TIMER_ENABLED && [ -z "${GAME_TIMER:-}" ] && [ -t 0 ]; then
 fi
 
 if $TIMER_ENABLED && [ -z "${GAME_DURATION:-}" ] && [ -t 0 ]; then
-    echo "  Default: 45 minutes. Enter duration in minutes, or press Enter to keep default."
-    read -r -p "  Duration [45]: " mins
+    echo "  Default: 60 minutes. Enter duration in minutes, or press Enter to keep default."
+    read -r -p "  Duration [60]: " mins
     if [ -n "$mins" ] && [ "$mins" -eq "$mins" ] 2>/dev/null; then
         DURATION_SEC=$(( mins * 60 ))
     fi
@@ -79,10 +91,17 @@ echo ""
 if ! $NO_RESET; then
     TIMER_FLAG=""
     $TIMER_ENABLED || TIMER_FLAG="--no-timer"
-    python3 /game/engine/state.py init $TIMER_FLAG --duration "$DURATION_SEC" > /dev/null
+    python3 /game/engine/state.py init \
+        --name "$PLAYER_NAME" \
+        $TIMER_FLAG \
+        --duration "$DURATION_SEC" > /dev/null
+
+    # Record the player's tty so engined can write notifications there
+    mkdir -p "$HOME/.game"
+    tty > "$HOME/.game/player_tty" 2>/dev/null || true
 fi
 
-# ── Inject PS1 shortcut into .bashrc (idempotent) ─────────────────────────────
+# ── PS1 injection ──────────────────────────────────────────────────────────────
 
 BASHRC="$HOME/.bashrc"
 if ! grep -q 'game status --short' "$BASHRC" 2>/dev/null; then
@@ -90,25 +109,29 @@ if ! grep -q 'game status --short' "$BASHRC" 2>/dev/null; then
 
 # escape-linux: compact game status in prompt
 _game_ps1() { python3 /game/engine/cli.py status --short 2>/dev/null; }
-export PS1='\[$(_game_ps1)\] \u@escape:\w\$ '
+export PS1='\[$(_game_ps1)\] \w\$ '
 EOF
+fi
+
+# ── Start engined if not already running ───────────────────────────────────────
+
+if ! pgrep -f engined.py > /dev/null 2>&1; then
+    GAME_TTY=$(cat "$HOME/.game/player_tty" 2>/dev/null || tty) \
+        nohup python3 /game/engine/engined.py \
+        > "$HOME/.game/engined.log" 2>&1 &
 fi
 
 # ── Puzzle 1 briefing ──────────────────────────────────────────────────────────
 
 echo "──────────────────────────────────────────────────────────────"
 echo ""
-echo "  PUZZLE 1 of 7 — Permissions & Setuid"
+echo "  PUZZLE 1 of 3 — Leave a Mark"
 echo ""
-echo "  Linux file permissions go deeper than rwx. Some binaries carry"
-echo "  a special bit that lets them run with elevated privileges — even"
-echo "  when you invoke them as an unprivileged user."
+echo "  Every action on a Linux system leaves a trace."
+echo "  Your first task is simple: create a file called ready.txt"
+echo "  in your home directory."
 echo ""
-echo "  Somewhere on this system is a root-owned binary with that special"
-echo "  bit set. Find it, understand it, and make it reveal the first"
-echo "  key fragment."
-echo ""
-echo "  When you have the fragment, run:  game check"
+echo "  The game will notice automatically."
 echo ""
 echo "──────────────────────────────────────────────────────────────"
 echo ""
