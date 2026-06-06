@@ -1,0 +1,49 @@
+#!/usr/bin/env python3
+"""gateway — PATH puzzle wrapper.
+
+Runs whatever `verify` resolves to on PATH and checks its output.
+The system-installed `verify` always fails; the player must shadow it.
+"""
+
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+sys.path.insert(0, "/game/engine")
+
+EXPECTED = "CHARLIE"   # fragment from puzzle 3
+KEY3 = Path.home() / ".game" / "keys" / "key3"
+
+
+def fail(msg: str) -> None:
+    print(msg, file=sys.stderr)
+    sys.exit(1)
+
+
+def main() -> None:
+    if not KEY3.exists():
+        fail("key3 missing — complete puzzle 3 first.")
+
+    # Resolve `verify` on the current PATH — this is the whole lesson
+    result = subprocess.run(
+        ["verify"],
+        capture_output=True,
+        text=True,
+        env=os.environ,
+    )
+
+    output = result.stdout.strip()
+    if output != EXPECTED:
+        print(
+            f"gateway: `verify` returned {output!r}, expected the puzzle-3 fragment.\n"
+            "Shadow the system `verify` by placing your own earlier in PATH.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    print("gateway: correct! The PATH resolved to your verify.")
+
+
+if __name__ == "__main__":
+    main()
