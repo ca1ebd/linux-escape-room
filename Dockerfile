@@ -2,7 +2,7 @@ FROM debian:stable-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
         tmux \
-        gcc \
+        build-essential \
         python3 \
         netcat-traditional \
         procps \
