@@ -29,10 +29,9 @@ cat <<'BANNER'
 
 BANNER
 
-echo "  3 puzzles. One escape. Good luck."
+echo "  Good luck."
 echo ""
 echo "  Commands: game hint | game status | game reset | game pause"
-echo "  Puzzles complete automatically when you do the right thing."
 echo ""
 echo "──────────────────────────────────────────────────────────────"
 echo ""
@@ -54,13 +53,10 @@ echo ""
 # ── Timer configuration ────────────────────────────────────────────────────────
 
 TIMER_ENABLED=true
-DURATION_SEC=3600  # 60 minutes default
+DURATION_SEC=3600  # 60 minutes, not configurable
 
 if [ "${GAME_TIMER:-}" = "off" ]; then
     TIMER_ENABLED=false
-fi
-if [ -n "${GAME_DURATION:-}" ]; then
-    DURATION_SEC="$GAME_DURATION"
 fi
 
 if $TIMER_ENABLED && [ -z "${GAME_TIMER:-}" ] && [ -t 0 ]; then
@@ -70,17 +66,9 @@ if $TIMER_ENABLED && [ -z "${GAME_TIMER:-}" ] && [ -t 0 ]; then
     esac
 fi
 
-if $TIMER_ENABLED && [ -z "${GAME_DURATION:-}" ] && [ -t 0 ]; then
-    echo "  Default: 60 minutes. Enter duration in minutes, or press Enter to keep default."
-    read -r -p "  Duration [60]: " mins
-    if [ -n "$mins" ] && [ "$mins" -eq "$mins" ] 2>/dev/null; then
-        DURATION_SEC=$(( mins * 60 ))
-    fi
-fi
-
 echo ""
 if $TIMER_ENABLED; then
-    echo "  Timer: ON — $(( DURATION_SEC / 60 )) minutes"
+    echo "  Timer: ON — 60 minutes"
 else
     echo "  Timer: OFF"
 fi
@@ -101,15 +89,14 @@ if ! $NO_RESET; then
     tty > "$HOME/.game/player_tty" 2>/dev/null || true
 fi
 
-# ── PS1 injection ──────────────────────────────────────────────────────────────
+# ── PS1 — plain prompt with player name ───────────────────────────────────────
 
 BASHRC="$HOME/.bashrc"
-if ! grep -q 'game status --short' "$BASHRC" 2>/dev/null; then
-    cat >> "$BASHRC" <<'EOF'
+if ! grep -q 'escape-linux prompt' "$BASHRC" 2>/dev/null; then
+    cat >> "$BASHRC" <<EOF
 
-# escape-linux: compact game status in prompt
-_game_ps1() { python3 /game/engine/cli.py status --short 2>/dev/null; }
-export PS1='\[$(_game_ps1)\] \w\$ '
+# escape-linux prompt
+export PS1='${PLAYER_NAME}@escape:\w\$ '
 EOF
 fi
 
@@ -125,10 +112,8 @@ fi
 
 echo "──────────────────────────────────────────────────────────────"
 echo ""
-echo "  PUZZLE 1 of 3 — Leave a Mark"
-echo ""
 echo "  Every action on a Linux system leaves a trace."
-echo "  Your first task is simple: create a file called ready.txt"
+echo "  Your first task: create a file called ready.txt"
 echo "  in your home directory."
 echo ""
 echo "  The game will notice automatically."

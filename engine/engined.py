@@ -27,13 +27,17 @@ HOME = Path.home()
 TTY_FILE = HOME / ".game" / "player_tty"
 
 
-def _notify(msg: str) -> None:
-    """Write a message to the player's terminal."""
+def _tty() -> str:
     tty = os.environ.get("GAME_TTY", "")
     if not tty and TTY_FILE.exists():
         tty = TTY_FILE.read_text().strip()
+    return tty
 
+
+def _notify(msg: str) -> None:
+    """Write a message to the player's terminal."""
     text = f"\n\033[1m{msg}\033[0m\n"
+    tty = _tty()
     if tty:
         try:
             with open(tty, "w") as f:
@@ -41,7 +45,6 @@ def _notify(msg: str) -> None:
             return
         except OSError:
             pass
-    # Fallback: stdout
     sys.stdout.write(text)
     sys.stdout.flush()
 
@@ -72,13 +75,17 @@ def _on_complete(n: int, puzzle: dict) -> None:
     if n == _puzzles.PUZZLE_COUNT:
         s = _state.set_completed(s)
         _state.save(s)
-        _notify(
-            "╔══════════════════════════════════════╗\n"
-            "║          YOU HAVE ESCAPED!           ║\n"
-            "╚══════════════════════════════════════╝"
-        )
-        _tmux_popup("YOU ESCAPED! Run: python3 /game/engine/victory.py")
-        subprocess.run(["python3", "/game/engine/victory.py"])
+        tty = _tty()
+        _tmux_popup("YOU ESCAPED!")
+        if tty:
+            try:
+                with open(tty, "w") as f:
+                    subprocess.run(["python3", "/game/engine/victory.py"],
+                                   stdout=f, stderr=f)
+            except OSError:
+                subprocess.run(["python3", "/game/engine/victory.py"])
+        else:
+            subprocess.run(["python3", "/game/engine/victory.py"])
         sys.exit(0)
 
     s = _state.advance_puzzle(s)
@@ -86,20 +93,17 @@ def _on_complete(n: int, puzzle: dict) -> None:
 
     _run_setup(n + 1)
 
-    next_puzzle = _puzzles.get_puzzle(n + 1)
     clue = puzzle.get("clue", "")
 
     banner = (
         f"┌─────────────────────────────────────────┐\n"
-        f"│  ✓ Puzzle {n} complete!  Fragment: {fragment:<8}│\n"
+        f"│  ✓ Unlocked!  Fragment: {fragment:<17}│\n"
         f"│                                         │\n"
-        f"│  Clue: {clue:<33}│\n"
-        f"│                                         │\n"
-        f"│  Next → Puzzle {n+1}: {next_puzzle['name']:<21}│\n"
+        f"│  {clue:<41}│\n"
         f"└─────────────────────────────────────────┘"
     )
     _notify(banner)
-    _tmux_popup(f"Puzzle {n} done! → {next_puzzle['name']}")
+    _tmux_popup("Fragment unlocked!")
 
 
 def main() -> None:
