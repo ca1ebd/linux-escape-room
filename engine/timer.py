@@ -37,18 +37,18 @@ def is_paused(state: dict) -> bool:
 def format_timer(state: dict) -> str:
     t = state["timer"]
     if not t["enabled"]:
-        return "⏱ off"
+        return "T off"
     if is_paused(state):
         secs = abs(remaining(state))
         m, s = divmod(int(secs), 60)
-        return f"⏱ PAUSED {m:02d}:{s:02d}"
+        return f"T PAUSED {m:02d}:{s:02d}"
     r = remaining(state)
     if r >= 0:
         m, s = divmod(int(r), 60)
-        return f"⏱ {m:02d}:{s:02d}"
+        return f"T {m:02d}:{s:02d}"
     else:
         m, s = divmod(int(-r), 60)
-        return f"⏱ +{m:02d}:{s:02d}"
+        return f"T +{m:02d}:{s:02d}"
 
 
 def pause(state: dict) -> dict:
