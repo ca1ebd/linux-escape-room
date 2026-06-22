@@ -29,31 +29,17 @@ def _require_state() -> dict:
 
 
 def cmd_status(args: list[str]) -> None:
-    short = "--short" in args
     try:
         s = _state.load()
     except FileNotFoundError:
         print("[no game] run: game intro")
         return
 
-    n = _state.get_current_puzzle(s)
-    total = s["total_puzzles"]
-    puzzle = _puzzles.get_puzzle(n)
-    frags = len(s["fragments"])
-    pct = int(frags / total * 100)
-    bar = "█" * frags + "░" * (total - frags)
     timer_str = _timer.format_timer(s)
     name = _state.get_player_name(s)
     hints = s["hints"]
 
-    if short:
-        print(f"[{name} {n}/{total} {timer_str}]", end="")
-        return
-
-    print(
-        f"[ESCAPE-LINUX]  {name}  Puzzle {n}/{total}: {puzzle['name']}"
-        f"  {bar} {pct}%  {timer_str}  hints:{hints}"
-    )
+    print(f" {name}  {timer_str}  hints:{hints}")
 
 
 def cmd_hint(args: list[str]) -> None:
