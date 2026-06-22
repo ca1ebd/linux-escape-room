@@ -2,12 +2,9 @@ FROM debian:trixie-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
         tmux \
-        build-essential \
         python3 \
-        netcat-traditional \
         procps \
         findutils \
-        iproute2 \
         sudo \
         gosu \
     && rm -rf /var/lib/apt/lists/*
@@ -37,7 +34,7 @@ RUN echo 'player ALL=(root) NOPASSWD: /game/puzzles/*/setup.sh' > /etc/sudoers.d
 # tmux config + prompt (hardcode hostname since Docker can't change it at runtime)
 RUN mkdir -p /home/player && cp /game/tmux/.tmux.conf /home/player/.tmux.conf \
     && chown player:player /home/player/.tmux.conf \
-    && echo "PS1='\\[\\033[1;35m\\]\\w\\[\\033[0m\\]\\$ '" >> /home/player/.bashrc
+    && echo "PS1='\\[\\033[38;5;141m\\]\\w\\[\\033[0m\\]\\$ '" >> /home/player/.bashrc
 
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
