@@ -75,17 +75,7 @@ def _on_complete(n: int, puzzle: dict) -> None:
     if n == _puzzles.PUZZLE_COUNT:
         s = _state.set_completed(s)
         _state.save(s)
-        tty = _tty()
         _tmux_popup("YOU ESCAPED!")
-        if tty:
-            try:
-                with open(tty, "w") as f:
-                    subprocess.run(["python3", "/game/engine/victory.py"],
-                                   stdout=f, stderr=f)
-            except OSError:
-                subprocess.run(["python3", "/game/engine/victory.py"])
-        else:
-            subprocess.run(["python3", "/game/engine/victory.py"])
         sys.exit(0)
 
     s = _state.advance_puzzle(s)
