@@ -22,6 +22,7 @@ import timer as _timer
 
 POLL_INTERVAL = 1.0
 HOME = Path.home()
+STATUS_CACHE = HOME / ".game" / "status_cache"
 
 # Where to send notifications — written to by intro.sh
 TTY_FILE = HOME / ".game" / "player_tty"
@@ -96,6 +97,18 @@ def _on_complete(n: int, puzzle: dict) -> None:
     _tmux_popup("Fragment unlocked!")
 
 
+def _update_status_cache(s: dict) -> None:
+    """Write the status line to a cache file for instant tmux reads."""
+    try:
+        timer_str = _timer.format_timer(s)
+        name = _state.get_player_name(s)
+        hints = s["hints"]
+        line = f" {name}  {timer_str}  hints:{hints} "
+        STATUS_CACHE.write_text(line)
+    except Exception:
+        pass
+
+
 def main() -> None:
     while True:
         try:
@@ -105,7 +118,10 @@ def main() -> None:
             continue
 
         if s.get("completed"):
+            STATUS_CACHE.write_text(" ESCAPED! ")
             sys.exit(0)
+
+        _update_status_cache(s)
 
         n = _state.get_current_puzzle(s)
 
