@@ -1,6 +1,9 @@
 #!/bin/bash
 set -e
 
+# Set hostname so prompt shows player@escape
+hostname escape 2>/dev/null || true
+
 # Run puzzle 1 setup as root (places artifacts)
 bash /game/puzzles/01-hello/setup.sh
 
