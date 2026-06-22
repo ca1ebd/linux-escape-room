@@ -11,7 +11,7 @@ each teaching one concept you use daily but haven't gone deep on.
 
 ```bash
 docker build -t escape-linux .
-docker run -it --rm escape-linux
+docker run -it --rm --hostname escape escape-linux
 ```
 
 ## Options
@@ -23,7 +23,7 @@ docker run -it --rm escape-linux
 
 ```bash
 # No timer
-docker run -it --rm -e GAME_TIMER=off escape-linux
+docker run -it --rm --hostname escape -e GAME_TIMER=off escape-linux
 ```
 
 ## Controls

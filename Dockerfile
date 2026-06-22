@@ -34,9 +34,10 @@ RUN ln -s /game/engine/cli.py /usr/local/bin/game \
 RUN echo 'player ALL=(root) NOPASSWD: /game/puzzles/*/setup.sh' > /etc/sudoers.d/game-setup \
     && chmod 440 /etc/sudoers.d/game-setup
 
-# tmux config goes to player's home
+# tmux config + prompt (hardcode hostname since Docker can't change it at runtime)
 RUN mkdir -p /home/player && cp /game/tmux/.tmux.conf /home/player/.tmux.conf \
-    && chown player:player /home/player/.tmux.conf
+    && chown player:player /home/player/.tmux.conf \
+    && echo "PS1='\\u@escape:\\w\\$ '" >> /home/player/.bashrc
 
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
