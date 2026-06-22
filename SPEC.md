@@ -3,127 +3,93 @@
 ## 1. Premise
 
 A single Docker container drops the player into a terminal. To "escape," they must
-solve **7 progressive puzzles**, each teaching one Linux fundamental. Each puzzle is
+solve **3 progressive puzzles**, each teaching one Linux fundamental. Each puzzle is
 locked behind the previous one: solving puzzle *N* produces a **key fragment** and a
-**clue** that are required to start and/or solve puzzle *N+1*. The final puzzle requires
-the passphrase assembled from all 7 fragments.
+**clue** that bootstraps puzzle *N+1*.
 
-The player's **state is always visible** (current puzzle, progress, time remaining) via a
-persistent terminal status bar. A **countdown timer runs by default** but can be disabled
-during onboarding.
+The player's **timer is always visible** via a persistent tmux status bar. A
+**countdown timer runs by default** but can be disabled during onboarding.
 
 Target audience: not beginners. Think a software engineer ~2 years in who uses Linux
 daily but hasn't gone deep — challenging but achievable.
 
 -----
 
-## 2. The 7 concepts (and why each made the cut)
+## 2. The 3 puzzles
 
-|#|Concept                                             |Why it's worth going deeper                                                                                                       |
-|-|----------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------|
-|1|**Permissions, ownership & special bits**           |Most people know `chmod 755` but not setuid/setgid/sticky, `find -perm`, or *why* a root-owned binary can read a file they can't. |
-|2|**Processes, signals & `/proc`**                    |`ps`/`kill -9` is muscle memory; signals as IPC, signal handlers, and reading `/proc/<pid>` are not.                              |
-|3|**File descriptors, redirection & pipes**           |`>` and `|` are used constantly but fd duplication (`2>&1`, `3<`, `tee`, here-docs) is fuzzy for most.                            |
-|4|**Environment, PATH & command resolution**          |`export` is known; PATH resolution order, builtins vs binaries, and PATH shadowing/hijack (a real security topic) are not.        |
-|5|**Text-processing pipelines (grep/sed/awk + regex)**|Everyone greps; composing `grep | awk | sort | uniq` and writing a real regex is the actual skill.                                |
-|6|**Links, inodes & the filesystem**                  |Hard vs symbolic links, inode identity, `find -inum`, and recovering a deleted-but-open file via `/proc/<pid>/fd` are eye-openers.|
-|7|**Networking & sockets**                            |Listening ports, `ss`, connecting with `nc` or bash `/dev/tcp`, and the client/server model on `localhost`.                       |
+|#|Name|Concept|
+|-|----|-------|
+|1|Leave a Mark|File creation — `touch`, redirection|
+|2|Words on the Wire|stdout redirection — `echo 'phrase' > file`|
+|3|Hunt the Flag|Recursive file search — `find`, `cp`|
 
 -----
 
 ## 3. Puzzle chain (the "escape room" logic)
 
 Each puzzle emits a **key fragment** (a short string) written to `~/.game/keys/keyN`, and
-a **clue** that bootstraps the next puzzle. The chain is hard-linked: a puzzle's `setup`
-and `check` refuse to run/pass unless the prior key exists.
+a **clue** that bootstraps the next puzzle. The chain is hard-linked: a puzzle's `setup.sh`
+refuses to run unless the prior key exists.
 
-> **Containment model:** the container runs as an unprivileged `player` user. All secrets
-> are owned by `root` and placed at build/entry time. The player can never trivially `cat`
-> their way to the end — they must use the technique each puzzle teaches.
+> **Containment model:** the container runs as an unprivileged `player` user. Puzzle
+> setup scripts run as root via sudo. The player cannot skip puzzles because each
+> setup asserts the prior key file exists.
 
-### Puzzle 1 — Permissions & setuid  *(teaches C; this is the "Linux is C" puzzle)*
+### Puzzle 1 — Leave a Mark
 
-- A root-owned file `/srv/vault/secret1` is mode `0600` (player can't read it).
-- A **setuid C binary** `/usr/local/bin/unlock1` (owned by root, mode `4755`) reads that
-  file and prints fragment #1 — but only when invoked with a required argument.
-- The player must discover it: `find / -perm -4000 -type f 2>/dev/null`, inspect with
-  `ls -l`/`stat`, then run it correctly.
-- **Reward:** fragment 1 + clue: *"a heartbeat process is listening for a signal."*
-- **Why C:** setuid is a kernel/libc mechanism; reading `unlock1.c` shows `setuid()`,
-  `getuid()`/`geteuid()`, and why the privilege boundary works.
+- The player must create a file called `~/ready.txt`. Any content (or empty) is fine.
+- Watch condition: `~/ready.txt` exists.
+- **Reward:** fragment "ALPHA" + clue: *"A program only speaks when wired the right way."*
 
-### Puzzle 2 — Processes & signals
+### Puzzle 2 — Words on the Wire
 
-- A daemon (`heartbeatd`, a Python script) runs in the background with a `SIGUSR1` handler.
-- On `SIGUSR1` it writes fragment #2 to a player-readable drop file; on `SIGUSR2` it
-  decoys/resets.
-- Player must locate it (`ps -ef`, `pgrep`, `/proc/<pid>/cmdline`) and send the right
-  signal: `kill -USR1 <pid>`.
-- **Gate:** `heartbeatd` only starts if `key1` exists.
-- **Reward:** fragment 2 + clue: *"a program only speaks on the right wires (fds)."*
+- The player must write the exact phrase "open sesame" to `~/signal.txt` using stdout
+  redirection: `echo 'open sesame' > ~/signal.txt`
+- A briefing file (`~/puzzle2.txt`) explains the task and syntax.
+- Watch condition: `~/signal.txt` exists and contains "open sesame".
+- **Gate:** `setup.sh` asserts key1 exists.
+- **Reward:** fragment "BRAVO" + clue: *"Something is hiding where names don't matter."*
 
-### Puzzle 3 — File descriptors & redirection
+### Puzzle 3 — Hunt the Flag
 
-- A program `whisper` (Python) reads a token on **fd 3**, writes the real answer to
-  **stderr** only, and prints noise to stdout.
-- Player must wire it up, e.g. `whisper 3< token.txt 2> answer.txt >/dev/null` (exact form
-  documented in-puzzle), feeding the token derived from fragment 2.
-- **Reward:** fragment 3 + clue: *"the way out depends on what `PATH` finds first."*
-
-### Puzzle 4 — Environment & PATH resolution
-
-- A wrapper `gateway` runs whatever `verify` resolves to on PATH and checks its output.
-- The system `verify` is a decoy that always fails. The player must **shadow** it by
-  creating their own `verify` script earlier in PATH (or prepend a dir to PATH), making it
-  emit the value from fragment 3.
-- Teaches: `which`/`type`, `echo $PATH`, builtins vs binaries, PATH ordering, `export`.
-- **Reward:** fragment 4 + clue: *"7,000 log lines, one anomaly."*
-
-### Puzzle 5 — Text processing & regex
-
-- A large generated log `/srv/logs/access.log` (~7k lines). Exactly one line matches a
-  pattern hinted by fragment 4; a field within it (extracted via `awk`/`cut`) is fragment 5.
-- Intended pipeline shape: `grep -E '<pattern>' access.log | awk '{print $N}' | sort | uniq -c`.
-- **Reward:** fragment 5 + clue: *"the next clue has no name, only a number"* (an inode).
-
-### Puzzle 6 — Links & inodes
-
-- A directory of thousands of hard-linked decoy files; the real one is identified **only by
-  inode number** (given by fragment 5): `find /srv/maze -inum <N>`.
-- Bonus variant (configurable): the file is **deleted but still held open** by a process;
-  recover it via `/proc/<pid>/fd/<n>`.
-- Teaches: `ls -i`, `stat`, `find -inum`, hard vs symbolic links, `df`/`du`.
-- **Reward:** fragment 6 + clue: *"a service is listening on a port — go knock."* (port #).
-
-### Puzzle 7 — Networking & sockets  *(final)*
-
-- A server (Python `socketserver`) listens on `127.0.0.1:<port>` (port from fragment 6).
-- Player connects (`nc 127.0.0.1 <port>` or bash `exec 3<>/dev/tcp/127.0.0.1/<port>`),
-  is challenged, and must send the **full passphrase = fragments 1–7 concatenated**.
-- On success the server returns the **ESCAPE CODE**; the engine marks the game complete and
-  stops the timer.
-- Teaches: `ss -ltnp`, ports, client/server, `nc`, `/dev/tcp`.
+- A flag file containing "CHARLIE" is hidden in a nested directory tree under
+  `/srv/hidden/`. Decoy files exist at other paths.
+- The player must find it (`find /srv/hidden -name flag.txt`) and copy it home:
+  `cp /path/to/flag.txt ~/flag.txt`
+- A briefing file (`~/puzzle3.txt`) explains the task.
+- Watch condition: `~/flag.txt` exists and contains "CHARLIE".
+- **Gate:** `setup.sh` asserts key2 exists.
+- **Reward:** fragment "CHARLIE" — game complete.
 
 -----
 
-## 4. Always-visible state (status bar)
+## 4. Status bar
 
-**Mechanism:** the container auto-starts inside **tmux**; the player works in the main pane
-and a persistent **status line** is always rendered.
+**Mechanism:** the container runs inside **tmux**. The status bar displays the player's
+name, time remaining, and hints used.
 
 Status line format:
 
 ```
-⏱ 41:12
+ Alice  41:12  hints:0 
 ```
 
-- **Timer only** — `⏱ MM:SS` remaining, or `⏱ off` if disabled, or `⏱ +MM:SS` overtime.
-- No puzzle name, progress bar, or hint count is shown. The player should not know how
-  close they are to finishing.
+Content shown:
+- Player name (from onboarding)
+- Time remaining as `MM:SS`, or `PAUSED MM:SS`, or `+MM:SS` (overtime), or `off`
+- Hint count
 
-The status bar refreshes every second (tmux `status-interval 1`) by calling a render script
-that reads the state file. `game status` prints the timer for non-tmux use. The PS1 shows
-`name@escape:~$` — plain directory only, no game state.
+Content **not** shown:
+- Puzzle names or numbers
+- Progress bar or percentage
+- Emoji or unicode symbols (terminal compatibility)
+
+**Performance:** `engined` writes the formatted status line to `~/.game/status_cache`
+every second. The tmux `status-left` simply cats this file (`cat ~/.game/status_cache`),
+avoiding Python startup overhead on every refresh. This ensures true 1-second updates.
+
+The tmux window list is hidden (`window-status-format` and `window-status-current-format`
+set to empty) so only the status line appears.
 
 -----
 
@@ -133,9 +99,8 @@ that reads the state file. `game status` prints the timer for non-tmux use. The 
   non-interactively via `GAME_TIMER=off` env var.
 - Duration: **60:00** — fixed, not configurable by the player.
 - **On reaching zero (soft-fail, default):** the run is flagged `escaped_late=true`, the
-  status timer shows overtime `⏱ +MM:SS`, but the player **may keep going** and still escape.
-  A `GAME_HARD_TIMER=true` option converts this to a lockout (final puzzle refuses to
-  complete after zero).
+  status timer shows overtime `+MM:SS`, but the player **may keep going** and still escape.
+  A `GAME_HARD_TIMER=true` option converts this to a lockout.
 - Timer pauses are allowed via `game pause` / `game resume`.
 
 State for the timer (start epoch, duration, paused-accumulated, enabled flag) lives in the
@@ -145,16 +110,13 @@ shared state file so the status bar and engine agree.
 
 ## 6. Engine: commands & contracts
 
-A single `game` CLI (on PATH) is the player's control surface. Core subcommands:
+A single `game` CLI (on PATH) is the player's control surface. Subcommands:
 
-- `game status` — print the timer (also used by tmux).
 - `game hint` — print the next hint for the current puzzle (increments `hints`).
-- `game reset [N]` — re-run setup for the current puzzle (or puzzle N), for when the player
-  corrupts an artifact.
 - `game pause` / `game resume` — timer control.
-- `game intro` — (re)run onboarding.
 
-There is no `game check`. Puzzles complete automatically.
+There is no `game check`, `game status`, `game reset`, or `game intro`. Puzzles complete
+automatically. The status bar provides all state visibility.
 
 **Progression contract (how puzzles link):**
 
@@ -163,6 +125,7 @@ There is no `game check`. Puzzles complete automatically.
 1. `engined` — a background daemon started at onboarding — polls the current puzzle's watch
    condition every second. On match it writes `~/.game/keys/keyN`, runs the next puzzle's
    `setup.sh`, advances state, and notifies the player via their terminal.
+1. On final puzzle completion, `engined` shows a tmux display-message "YOU ESCAPED!" and exits.
 1. A puzzle's `setup.sh` **must** assert the prior key exists; this enforces "you can't be
    here without the previous answer," even across container restarts.
 
@@ -171,12 +134,12 @@ There is no `game check`. Puzzles complete automatically.
 ```json
 {
   "player_name": "Alice",
-  "current_puzzle": 3,
-  "total_puzzles": 7,
-  "fragments": {"1": "...", "2": "...", "3": "..."},
+  "current_puzzle": 2,
+  "total_puzzles": 3,
+  "fragments": {"1": "ALPHA"},
   "timer": {"enabled": true, "start_epoch": 0, "duration_sec": 3600,
             "paused_sec": 0, "paused_at": null},
-  "hints": 1,
+  "hints": 0,
   "escaped_late": false,
   "completed": false
 }
@@ -184,80 +147,141 @@ There is no `game check`. Puzzles complete automatically.
 
 -----
 
-## 7. Implementation plan — bite-size chunks (≤ 3 files each)
+## 7. Container & environment
+
+### Base image
+
+- `debian:trixie-slim` — pinned to a named release (not the floating `stable` tag) to
+  stabilize layer cache across builds.
+
+### Installed packages (minimal)
+
+`tmux`, `python3`, `procps`, `findutils`, `sudo`, `gosu`
+
+No build tools, networking utilities, or other packages unless a puzzle requires them.
+
+### Player environment
+
+- User: `player` (unprivileged, created with `useradd -m -s /bin/bash`)
+- Working directory: `/home/player` (tmux session starts here via `-c`)
+- PS1: current path only, purple (256-color `38;5;141`): `\[\033[38;5;141m\]\w\[\033[0m\]\$ `
+- No hostname or username in prompt (Docker can't reliably set hostname at runtime)
+
+### tmux session
+
+- Session name: `game`
+- Starts in `/home/player`
+- Status bar on bottom (status-left only, no window list, no status-right)
+- Session locked down: detach, split, new-window, kill-pane all unbound
+- Mouse disabled
+- History: 50000 lines
+
+### Onboarding
+
+`intro.sh` runs before tmux starts (from `entrypoint.sh`). It:
+
+1. Displays the ASCII welcome banner
+2. Prompts for player name (stored in state, shown in tmux status bar only)
+3. Prompts for timer on/off
+4. Initializes `state.json`
+5. Records player tty for engined notifications
+6. Starts `engined` in background
+7. Writes the puzzle 1 briefing into `.bashrc` as a one-shot block (guarded by a flag file)
+   so it displays when the tmux shell first opens — not before tmux starts
+
+### Victory
+
+On final puzzle completion, `engined` shows `tmux display-message "YOU ESCAPED!"` (4-second
+display in the status area) and exits. No separate victory banner or script.
+
+-----
+
+## 8. CI/CD
+
+GitHub Actions workflow (`.github/workflows/docker-build.yml`):
+
+- Triggers on push to any branch
+- Uses `docker/setup-buildx-action` for BuildKit support
+- Builds multi-arch: `linux/amd64,linux/arm64`
+- Pushes to GitHub Container Registry (`ghcr.io`)
+- Registry-based build cache (`cache-from`/`cache-to` with `type=registry`) to avoid
+  re-downloading unchanged layers on pull
+- Tags: branch name, sha prefix, `latest` on main
+
+-----
+
+## 9. Implementation plan — bite-size chunks (≤ 3 files each)
 
 Build in this order. Each chunk is independently testable.
 
 ### Chunk A — Base container (3 files)
 
-- `Dockerfile` — base `debian:stable-slim`; install `tmux`, `gcc`, `python3`, `netcat`,
-  `procps`, `findutils`; create `player` user; copy `engine/` and `puzzles/`; set entrypoint.
-- `entrypoint.sh` — at boot: run all `setup` needed for puzzle 1, init state, drop to
-  `player`, launch tmux with the game session.
-- `README.md` — how to build/run (`docker run -it escape-linux`), house rules.
+- `Dockerfile` — base `debian:trixie-slim`; install minimal packages; create `player`
+  user; copy `engine/` and `puzzles/`; set PS1; set entrypoint.
+- `entrypoint.sh` — at boot: run puzzle 1 setup as root, run `intro.sh` if first boot,
+  drop to `player`, launch tmux with `-c /home/player`.
+- `README.md` — how to build/run, env var options, controls.
 
-### Chunk B — Engine core (3 files)
+### Chunk B — Engine core (4 files)
 
 - `engine/state.py` — load/save `state.json`, advance puzzle, write fragments (atomic writes).
-- `engine/puzzles.py` — registry: ordered list of puzzle metadata (id, name, dir, fragment, watch condition, hints).
-- `engine/cli.py` — the `game` command (`status`, `hint`, `reset`, `pause/resume`, `intro`).
-- `engine/engined.py` — background watcher daemon; polls watch conditions, auto-advances on match.
+- `engine/puzzles.py` — registry: ordered list of puzzle metadata (id, name, dir, fragment,
+  watch condition, hints).
+- `engine/cli.py` — the `game` command (`hint`, `pause/resume`).
+- `engine/engined.py` — background watcher daemon; polls watch conditions, writes status
+  cache, auto-advances on match.
 
-### Chunk C — Status bar + timer (3 files)
+### Chunk C — Status bar + timer (2 files)
 
-- `tmux/.tmux.conf` — `status-interval 1`, `status-left` calls `statusbar.sh`, lock down
-  pane-killing/detach keys so the session stays put.
-- `tmux/statusbar.sh` — render the status line from `state.json`.
-- `engine/timer.py` — timer math (remaining/overtime/paused), enable/disable, used by both
-  the engine and status bar.
+- `tmux/.tmux.conf` — `status-interval 1`, `status-left` cats `~/.game/status_cache`,
+  hide window list, lock down pane-killing/detach keys.
+- `engine/timer.py` — timer math (remaining/overtime/paused), formatting without emoji.
 
-### Chunk D — Onboarding (1–2 files)
+### Chunk D — Onboarding (1 file)
 
-- `intro.sh` — welcome screen, ask player name + timer on/off (duration fixed at 60 min),
-  write initial state, record player tty, start `engined`, show puzzle 1 briefing.
+- `intro.sh` — welcome banner, ask player name + timer on/off (duration fixed at 60 min),
+  write initial state, record player tty, start `engined`, write puzzle 1 briefing into
+  `.bashrc` with one-shot guard.
 
-### Chunks E–K — One chunk per puzzle (≤ 3 files each)
+### Chunks E–G — One chunk per puzzle (≤ 3 files each)
 
 Each lives in `puzzles/NN-name/` with the same shape:
 
-- `setup.sh` — assert prior key, place artifacts/secrets (as root where needed).
+- `setup.sh` — assert prior key, place artifacts (as root where needed).
 - A **watch condition** declared in `engine/puzzles.py` (`file` path + optional `contains`
   string) — no `check.sh`/`check.py`; `engined` polls and auto-advances.
-- one **artifact source** file specific to the puzzle:
-  - **E / P1:** `unlock1.c` (setuid C binary, compiled at build).
-  - **F / P2:** `heartbeatd.py` (signal-handling daemon).
-  - **G / P3:** `whisper.py` (fd-3 reader / stderr-only writer).
-  - **H / P4:** `gateway` + decoy `verify` (PATH shadowing target).
-  - **I / P5:** `gen_log.py` (deterministic ~7k-line log generator, build-time).
-  - **J / P6:** `build_maze.sh` (hard-link forest + chosen inode; optional open-fd variant).
-  - **K / P7:** `finalserver.py` (`socketserver` validating the assembled passphrase).
+- **E / P1:** `puzzles/01-hello/setup.sh` (no artifacts needed, just cleanup).
+- **F / P2:** `puzzles/02-redirect/setup.sh` (drops briefing file `~/puzzle2.txt`).
+- **G / P3:** `puzzles/03-find/setup.sh` (builds `/srv/hidden/` directory tree with flag).
 
-### Chunk L — Polish & validation (2–3 files)
+### Chunk H — Validation (1 file)
 
-- `tests/smoke.sh` — scripts a full solve end-to-end to prove the chain links correctly.
-- `engine/victory.py` — ESCAPE banner, final time, late/hint summary, `completed=true`.
-- (Optional) `engine/messages.py` — centralized clue/briefing text.
+- `tests/smoke.sh` — scripts a full solve end-to-end as root using `gosu player` to
+  simulate player actions. Must exit 0 from a clean container.
 
 -----
 
-## 8. Design rules / acceptance criteria
+## 10. Design rules / acceptance criteria
 
-- **Python for any programming**, except where the *lesson is C/C++* (Puzzle 1's setuid
-  binary) — that's intentional, since Linux itself is C.
-- **Every puzzle requires the previous one's output** (key file present and/or fragment used).
-- **Timer is always on screen** (tmux status bar; `game status` fallback). No progress or
-  puzzle position is shown — the player should not know how close they are to finishing.
+- **Python for all engine code.** Puzzles themselves are pure shell interactions.
+- **Every puzzle requires the previous one's output** (key file present).
+- **Timer is always on screen** (tmux status bar). No progress, puzzle position, or
+  completion percentage is shown.
 - **Timer on by default, disable-able at onboarding** (`GAME_TIMER=off` for non-interactive).
   Duration is fixed at 60 minutes and not player-configurable.
-- No puzzle is solvable by a naive `cat`/`find`-and-read; each forces the intended technique
-  (enforced by root ownership + permissions + the gate checks).
+- **No emoji or unicode symbols** in the status bar or engine output — use plain ASCII for
+  terminal compatibility.
+- **Status bar updates every second** via a cache file (not by spawning Python on each tick).
+- **Multi-arch image** (amd64 + arm64) built in CI with registry cache.
+- **Minimal image footprint** — only install packages required by current puzzles.
 - Each implementation chunk touches **at most 3 files**.
 - A `tests/smoke.sh` run must escape from a clean container with no manual intervention.
 
 -----
 
-## 9. Stretch (post-MVP)
+## 11. Stretch (post-MVP)
 
+- More puzzles (permissions/setuid, processes/signals, file descriptors, PATH resolution,
+  text processing, inodes, networking) to bring the count up to 7.
 - Difficulty modes (`easy` adds more hints / longer timer).
-- A second branch of puzzles (cron/systemd, archives/compression, mounts/devices) for replay.
 - Persisted leaderboard of best escape times via a bind-mounted volume.
