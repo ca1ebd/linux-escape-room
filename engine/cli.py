@@ -5,7 +5,6 @@ Puzzles complete automatically when their watch condition is met.
 No 'game check' needed — just do the thing.
 """
 
-import subprocess
 import sys
 from pathlib import Path
 
@@ -28,20 +27,6 @@ def _require_state() -> dict:
         _die("No game state found. Run: game intro")
 
 
-def cmd_status(args: list[str]) -> None:
-    try:
-        s = _state.load()
-    except FileNotFoundError:
-        print("[no game] run: game intro")
-        return
-
-    timer_str = _timer.format_timer(s)
-    name = _state.get_player_name(s)
-    hints = s["hints"]
-
-    print(f" {name}  {timer_str}  hints:{hints}")
-
-
 def cmd_hint(args: list[str]) -> None:
     s = _require_state()
     n = _state.get_current_puzzle(s)
@@ -59,16 +44,6 @@ def cmd_hint(args: list[str]) -> None:
     print(f"Hint {hints_used + 1}: {hint}")
 
 
-def cmd_reset(args: list[str]) -> None:
-    s = _require_state()
-    n = int(args[0]) if args else _state.get_current_puzzle(s)
-    setup = _puzzles.get_setup(n)
-    if not setup.exists():
-        _die(f"No setup.sh for puzzle {n}")
-    subprocess.run(["sudo", str(setup)], check=True)
-    print(f"Puzzle {n} reset.")
-
-
 def cmd_pause(args: list[str]) -> None:
     s = _require_state()
     s = _timer.pause(s)
@@ -83,30 +58,18 @@ def cmd_resume(args: list[str]) -> None:
     print("Timer resumed.")
 
 
-def cmd_intro(args: list[str]) -> None:
-    subprocess.run(["bash", "/game/intro.sh", "--no-reset"])
-
-
 COMMANDS = {
-    "status": cmd_status,
     "hint": cmd_hint,
-    "reset": cmd_reset,
     "pause": cmd_pause,
     "resume": cmd_resume,
-    "intro": cmd_intro,
 }
 
 USAGE = """\
 usage: game <command> [args]
 
 commands:
-  status          show current puzzle and timer
   hint            get a hint for the current puzzle
-  reset [N]       re-run setup for puzzle N (default: current)
   pause / resume  timer control
-  intro           replay the welcome screen
-
-Puzzles complete automatically — just do the thing.
 """
 
 
