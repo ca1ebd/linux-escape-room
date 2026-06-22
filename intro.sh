@@ -89,17 +89,6 @@ if ! $NO_RESET; then
     tty > "$HOME/.game/player_tty" 2>/dev/null || true
 fi
 
-# ── PS1 — plain prompt with player name ───────────────────────────────────────
-
-BASHRC="$HOME/.bashrc"
-if ! grep -q 'escape-linux prompt' "$BASHRC" 2>/dev/null; then
-    cat >> "$BASHRC" <<EOF
-
-# escape-linux prompt
-export PS1='${PLAYER_NAME}@escape:\w\$ '
-EOF
-fi
-
 # ── Start engined if not already running ───────────────────────────────────────
 
 if ! pgrep -f engined.py > /dev/null 2>&1; then
@@ -108,15 +97,26 @@ if ! pgrep -f engined.py > /dev/null 2>&1; then
         > "$HOME/.game/engined.log" 2>&1 &
 fi
 
-# ── Puzzle 1 briefing ──────────────────────────────────────────────────────────
+# ── Puzzle 1 briefing (shown once when tmux shell starts) ─────────────────────
 
-echo "──────────────────────────────────────────────────────────────"
-echo ""
-echo "  Every action on a Linux system leaves a trace."
-echo "  Your first task: create a file called ready.txt"
-echo "  in your home directory."
-echo ""
-echo "  The game will notice automatically."
-echo ""
-echo "──────────────────────────────────────────────────────────────"
-echo ""
+BASHRC="$HOME/.bashrc"
+if ! grep -q 'escape-linux-briefing' "$BASHRC" 2>/dev/null; then
+    cat >> "$BASHRC" <<'BRIEF'
+
+# escape-linux-briefing
+if [ ! -f "$HOME/.game/.briefing_shown" ]; then
+    echo ""
+    echo "──────────────────────────────────────────────────────────────"
+    echo ""
+    echo "  Every action on a Linux system leaves a trace."
+    echo "  Your first task: create a file called ready.txt"
+    echo "  in your home directory."
+    echo ""
+    echo "  The game will notice automatically."
+    echo ""
+    echo "──────────────────────────────────────────────────────────────"
+    echo ""
+    touch "$HOME/.game/.briefing_shown"
+fi
+BRIEF
+fi
