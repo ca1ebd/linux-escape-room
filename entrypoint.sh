@@ -13,7 +13,7 @@ if [ ! -f "$STATE_FILE" ]; then
     gosu player bash /game/intro.sh
 fi
 
-# Drop to player and start tmux session
-exec gosu player tmux new-session -s game \
+# Drop to player and start tmux session in home directory
+exec gosu player tmux new-session -s game -c /home/player \
     -x "$(tput cols 2>/dev/null || echo 220)" \
     -y "$(tput lines 2>/dev/null || echo 50)"
